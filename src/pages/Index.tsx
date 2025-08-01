@@ -1,11 +1,7 @@
-import { PlantDiseaseDetector } from '@/components/PlantDiseaseDetector';
+import { PlantDetectionLayout } from '@/components/PlantDetectionLayout';
 
 const Index = () => {
-  return (
-    <div className="min-h-screen bg-background">
-      <PlantDiseaseDetector />
-    </div>
-  );
+  return <PlantDetectionLayout />;
 };
 
 export default Index;

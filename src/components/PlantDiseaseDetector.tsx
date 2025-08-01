@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, Camera, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Loader2, Upload, Camera, AlertTriangle, CheckCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { API_CONFIG } from '@/config/api';
+import { DetectionHistory, saveDetectionResult, uploadImage } from '@/lib/supabase';
 
 interface DetectionResult {
   disease: string;
@@ -13,12 +14,37 @@ interface DetectionResult {
   severity: 'Low' | 'Medium' | 'High';
 }
 
-export const PlantDiseaseDetector = () => {
+interface PlantDiseaseDetectorProps {
+  onNewDetection?: () => void;
+  selectedHistoryResult?: DetectionHistory | null;
+  onClearSelection?: () => void;
+}
+
+export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
+  onNewDetection,
+  selectedHistoryResult,
+  onClearSelection
+}) => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Effect to handle selected history result
+  useEffect(() => {
+    if (selectedHistoryResult) {
+      setSelectedImage(selectedHistoryResult.image_url);
+      setSelectedFile(null);
+      setResult({
+        disease: selectedHistoryResult.disease,
+        confidence: selectedHistoryResult.confidence,
+        treatment: selectedHistoryResult.treatment,
+        severity: selectedHistoryResult.severity,
+      });
+    }
+  }, [selectedHistoryResult]);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -28,9 +54,15 @@ export const PlantDiseaseDetector = () => {
         return;
       }
       
+      // Clear any selected history result
+      if (onClearSelection) {
+        onClearSelection();
+      }
+      
       const reader = new FileReader();
       reader.onload = (e) => {
         setSelectedImage(e.target?.result as string);
+        setSelectedFile(file);
         setResult(null);
       };
       reader.readAsDataURL(file);
@@ -57,7 +89,7 @@ export const PlantDiseaseDetector = () => {
   };
 
   const analyzeImage = async () => {
-    if (!selectedImage) return;
+    if (!selectedImage || !selectedFile) return;
 
     setIsAnalyzing(true);
     setUploadProgress(0);
@@ -74,6 +106,14 @@ export const PlantDiseaseDetector = () => {
         });
       }, 300);
 
+      // Upload image to Supabase storage
+      let imageUrl = selectedImage;
+      try {
+        imageUrl = await uploadImage(selectedFile);
+      } catch (uploadError) {
+        console.warn('Failed to upload to storage, using local image:', uploadError);
+      }
+
       // In a real implementation, you would send the image to your ML API
       // using the API_CONFIG.DISEASE_RECOGNITION_API_KEY
       const detectionResult = await simulateAPICall(selectedImage);
@@ -81,6 +121,24 @@ export const PlantDiseaseDetector = () => {
       clearInterval(progressInterval);
       setUploadProgress(100);
       setResult(detectionResult);
+
+      // Save to history
+      try {
+        await saveDetectionResult({
+          image_url: imageUrl,
+          disease: detectionResult.disease,
+          confidence: detectionResult.confidence,
+          treatment: detectionResult.treatment,
+          severity: detectionResult.severity,
+        });
+        
+        // Notify parent component of new detection
+        if (onNewDetection) {
+          onNewDetection();
+        }
+      } catch (saveError) {
+        console.warn('Failed to save to history:', saveError);
+      }
       
       toast.success('Analysis completed successfully!');
     } catch (error) {
@@ -94,10 +152,10 @@ export const PlantDiseaseDetector = () => {
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'Low': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      case 'High': return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
+      case 'Low': return 'bg-success/10 text-success border-success/20';
+      case 'Medium': return 'bg-warning/10 text-warning border-warning/20';
+      case 'High': return 'bg-destructive/10 text-destructive border-destructive/20';
+      default: return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -110,24 +168,39 @@ export const PlantDiseaseDetector = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-green-400 bg-clip-text text-transparent">
-          Plant Vision Pro
-        </h1>
-        <p className="text-xl text-muted-foreground">
-          AI-powered plant disease detection and treatment recommendations
-        </p>
-      </div>
+    <div className="space-y-6">
+      {selectedHistoryResult && (
+        <Card className="shadow-soft border-warning/30 bg-warning/5">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <span className="text-sm font-medium">Viewing historical result</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearSelection}
+                className="h-6 w-6 p-0"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      <Card className="border-2 border-dashed border-green-200 dark:border-green-800">
+      <Card className="shadow-medium border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Camera className="h-5 w-5" />
-            Upload Plant Image
+            <Camera className="h-5 w-5 text-primary" />
+            {selectedHistoryResult ? 'Historical Detection' : 'Plant Disease Detection'}
           </CardTitle>
           <CardDescription>
-            Upload a clear image of your plant to detect diseases and get treatment recommendations
+            {selectedHistoryResult 
+              ? 'Viewing a previous detection result'
+              : 'Upload a clear image of your plant to detect diseases and get treatment recommendations'
+            }
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -137,7 +210,7 @@ export const PlantDiseaseDetector = () => {
                 <img
                   src={selectedImage}
                   alt="Selected plant"
-                  className="max-w-md max-h-64 object-contain rounded-lg border"
+                  className="max-w-md max-h-64 object-contain rounded-lg border border-border/50 shadow-soft"
                 />
               </div>
             ) : (
@@ -166,11 +239,11 @@ export const PlantDiseaseDetector = () => {
                 Choose Image
               </Button>
               
-              {selectedImage && (
+              {selectedImage && !selectedHistoryResult && (
                 <Button 
                   onClick={analyzeImage}
-                  disabled={isAnalyzing}
-                  className="bg-green-600 hover:bg-green-700"
+                  disabled={isAnalyzing || !selectedFile}
+                  className="gradient-primary text-primary-foreground hover:opacity-90 shadow-glow"
                 >
                   {isAnalyzing ? (
                     <>
@@ -184,51 +257,62 @@ export const PlantDiseaseDetector = () => {
               )}
             </div>
 
-            {isAnalyzing && uploadProgress > 0 && (
-              <div className="w-full max-w-md">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-green-600 transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
+              {isAnalyzing && uploadProgress > 0 && (
+                <div className="w-full max-w-md">
+                  <div className="h-3 bg-muted rounded-full overflow-hidden shadow-soft">
+                    <div 
+                      className="h-full gradient-primary transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2 text-center">
+                    Processing image... {uploadProgress}%
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground mt-2 text-center">
-                  Processing image... {uploadProgress}%
-                </p>
-              </div>
-            )}
+              )}
           </div>
         </CardContent>
       </Card>
 
       {result && (
-        <Card>
+        <Card className="shadow-medium border-border/50 bg-card/80 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-primary" />
               Detection Results
-              <Badge className={getSeverityColor(result.severity)}>
+              <Badge 
+                variant="outline" 
+                className={`${getSeverityColor(result.severity)} shadow-soft`}
+              >
                 {getSeverityIcon(result.severity)}
                 {result.severity} Risk
               </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg">{result.disease}</h3>
-              <p className="text-muted-foreground">
-                Confidence: {result.confidence}%
-              </p>
+          <CardContent className="space-y-6">
+            <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 shadow-soft">
+              <h3 className="font-semibold text-xl text-primary mb-2">{result.disease}</h3>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <span>Confidence: <strong>{result.confidence}%</strong></span>
+                {selectedHistoryResult && (
+                  <span>Historical Result</span>
+                )}
+              </div>
             </div>
             
-            <div>
-              <h4 className="font-medium mb-2">Recommended Treatment:</h4>
-              <p className="text-muted-foreground">{result.treatment}</p>
+            <div className="p-4 rounded-lg bg-accent/5 border border-accent/20 shadow-soft">
+              <h4 className="font-semibold mb-3 text-accent-foreground flex items-center gap-2">
+                <Loader2 className="h-4 w-4" />
+                Recommended Treatment:
+              </h4>
+              <p className="text-muted-foreground leading-relaxed">{result.treatment}</p>
             </div>
 
-            <div className="pt-4 border-t">
-              <p className="text-sm text-muted-foreground">
-                💡 Tip: Always consult with a plant specialist for severe cases
-              </p>
+            <div className="pt-4 border-t border-border/50">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <AlertTriangle className="h-4 w-4 text-warning" />
+                <span>Always consult with a plant specialist for severe cases or if symptoms persist</span>
+              </div>
             </div>
           </CardContent>
         </Card>
