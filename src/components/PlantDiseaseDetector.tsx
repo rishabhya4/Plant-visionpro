@@ -4,14 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Upload, Camera, AlertTriangle, CheckCircle, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { API_CONFIG } from '@/config/api';
 import { DetectionHistory, saveDetectionResult, uploadImage } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 interface DetectionResult {
   disease: string;
   confidence: number;
   treatment: string;
   severity: 'Low' | 'Medium' | 'High';
+  symptoms: string;
+  causes: string;
 }
 
 interface PlantDiseaseDetectorProps {
@@ -42,6 +44,8 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
         confidence: selectedHistoryResult.confidence,
         treatment: selectedHistoryResult.treatment,
         severity: selectedHistoryResult.severity,
+        symptoms: (selectedHistoryResult as any).symptoms || 'Historical data - symptoms not recorded',
+        causes: (selectedHistoryResult as any).causes || 'Historical data - causes not recorded',
       });
     }
   }, [selectedHistoryResult]);
@@ -69,23 +73,48 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
     }
   };
 
-  const simulateAPICall = async (imageBase64: string): Promise<DetectionResult> => {
-    // Simulated ML API call with the provided API key
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        // Mock disease detection results
-        const diseases = [
-          { disease: 'Healthy Plant', confidence: 95, treatment: 'No treatment needed. Continue regular care.', severity: 'Low' as const },
-          { disease: 'Leaf Blight', confidence: 87, treatment: 'Apply copper-based fungicide. Remove affected leaves.', severity: 'Medium' as const },
-          { disease: 'Powdery Mildew', confidence: 92, treatment: 'Use baking soda spray. Improve air circulation.', severity: 'Medium' as const },
-          { disease: 'Root Rot', confidence: 78, treatment: 'Reduce watering. Repot with fresh soil.', severity: 'High' as const },
-          { disease: 'Aphid Infestation', confidence: 88, treatment: 'Use insecticidal soap or neem oil spray.', severity: 'Medium' as const }
-        ];
-        
-        const randomResult = diseases[Math.floor(Math.random() * diseases.length)];
-        resolve(randomResult);
-      }, 3000);
-    });
+  const callPlantDiseaseAPI = async (imageBase64: string): Promise<DetectionResult> => {
+    try {
+      console.log('Calling AI disease detection API...');
+      
+      const { data, error } = await supabase.functions.invoke('plant-disease-detection', {
+        body: { imageBase64 }
+      });
+
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(error.message || 'AI analysis failed');
+      }
+
+      if (!data) {
+        throw new Error('No response from AI service');
+      }
+
+      // Validate the response structure
+      if (!data.disease || typeof data.confidence !== 'number') {
+        throw new Error('Invalid response format from AI service');
+      }
+
+      return {
+        disease: data.disease,
+        confidence: Math.round(data.confidence),
+        severity: data.severity || 'Medium',
+        symptoms: data.symptoms || 'Symptoms analysis not available',
+        causes: data.causes || 'Cause analysis not available',
+        treatment: data.treatment || 'Treatment recommendations not available'
+      };
+    } catch (error) {
+      console.error('AI API call failed:', error);
+      // Return a fallback response instead of throwing
+      return {
+        disease: 'Analysis Failed',
+        confidence: 0,
+        severity: 'Medium' as const,
+        symptoms: 'Could not analyze image symptoms',
+        causes: 'Analysis service unavailable',
+        treatment: 'Please try uploading a clearer image or try again later'
+      };
+    }
   };
 
   const analyzeImage = async () => {
@@ -114,9 +143,8 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
         console.warn('Failed to upload to storage, using local image:', uploadError);
       }
 
-      // In a real implementation, you would send the image to your ML API
-      // using the API_CONFIG.DISEASE_RECOGNITION_API_KEY
-      const detectionResult = await simulateAPICall(selectedImage);
+      // Call the real AI detection API
+      const detectionResult = await callPlantDiseaseAPI(selectedImage);
       
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -297,6 +325,24 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
                 {selectedHistoryResult && (
                   <span>Historical Result</span>
                 )}
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 rounded-lg bg-muted/5 border border-muted/20 shadow-soft">
+                <h4 className="font-semibold mb-3 text-foreground flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Symptoms:
+                </h4>
+                <p className="text-muted-foreground leading-relaxed">{result.symptoms}</p>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-muted/5 border border-muted/20 shadow-soft">
+                <h4 className="font-semibold mb-3 text-foreground flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  Causes:
+                </h4>
+                <p className="text-muted-foreground leading-relaxed">{result.causes}</p>
               </div>
             </div>
             
