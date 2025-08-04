@@ -1,9 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Note: In a production app, these would be environment variables
-// For now, using placeholder values that will work with Supabase's auto-connection
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
+// Supabase project configuration
+const supabaseUrl = 'https://ikreywaxwgdkhioouifo.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlrcmV5d2F4d2dka2hpb291aWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQzMjI1ODksImV4cCI6MjA2OTg5ODU4OX0.USdCmu7v50A4VgdRjIAlwwNnTTZkBtEOwnx5UWyzeD4';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
