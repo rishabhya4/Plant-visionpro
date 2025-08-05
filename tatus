@@ -1,0 +1,8 @@
+[33m77ce036[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Run SQL migration
+[33m1b99d97[m Add camera functionality
+[33me75ae8b[m Add API keys
+[33m9d33a3e[m Run SQL for Supabase
+[33me038b8f[m Connect to Supabase and apply changes
+[33mef593dd[m Add design and history
+[33m4b17a23[m Revert changes
+[33m41aea2c[m Use tech stack vite_react_shadcn_ts
