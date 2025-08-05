@@ -73,3 +73,18 @@ export const uploadImage = async (file: File): Promise<string> => {
     throw error;
   }
 };
+
+export const deleteDetectionResult = async (id: string) => {
+  try {
+    const { error } = await supabase
+      .from('detection_history')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error deleting detection result:', error);
+    throw error;
+  }
+};

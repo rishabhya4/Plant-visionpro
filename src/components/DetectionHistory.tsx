@@ -1,20 +1,58 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Clock, AlertTriangle, CheckCircle } from 'lucide-react';
-import { DetectionHistory as DetectionHistoryType } from '@/lib/supabase';
+import { 
+  AlertDialog, 
+  AlertDialogAction, 
+  AlertDialogCancel, 
+  AlertDialogContent, 
+  AlertDialogDescription, 
+  AlertDialogFooter, 
+  AlertDialogHeader, 
+  AlertDialogTitle, 
+  AlertDialogTrigger 
+} from '@/components/ui/alert-dialog';
+import { Clock, AlertTriangle, CheckCircle, Trash2, MoreVertical } from 'lucide-react';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
+import { DetectionHistory as DetectionHistoryType, deleteDetectionResult } from '@/lib/supabase';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 
 interface DetectionHistoryProps {
   history: DetectionHistoryType[];
   onSelectResult?: (result: DetectionHistoryType) => void;
+  onHistoryUpdate?: () => void;
 }
 
 export const DetectionHistory: React.FC<DetectionHistoryProps> = ({ 
   history, 
-  onSelectResult 
+  onSelectResult,
+  onHistoryUpdate
 }) => {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteDetectionResult(id);
+      toast.success('Detection result deleted successfully');
+      if (onHistoryUpdate) {
+        onHistoryUpdate();
+      }
+    } catch (error) {
+      console.error('Error deleting detection result:', error);
+      toast.error('Failed to delete detection result');
+    } finally {
+      setDeletingId(null);
+    }
+  };
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'Low': return 'bg-success/10 text-success border-success/20';
@@ -72,15 +110,15 @@ export const DetectionHistory: React.FC<DetectionHistoryProps> = ({
             {history.map((item) => (
               <div
                 key={item.id}
-                className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-accent/30 transition-colors cursor-pointer shadow-soft"
-                onClick={() => onSelectResult?.(item)}
+                className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-accent/30 transition-colors shadow-soft"
               >
                 <img
                   src={item.image_url}
                   alt="Plant detection"
-                  className="w-16 h-16 object-cover rounded-md border border-border/50"
+                  className="w-16 h-16 object-cover rounded-md border border-border/50 cursor-pointer"
+                  onClick={() => onSelectResult?.(item)}
                 />
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelectResult?.(item)}>
                   <div className="flex items-center gap-2 mb-1">
                     <h4 className="font-medium text-sm truncate">{item.disease}</h4>
                     <Badge 
@@ -98,6 +136,48 @@ export const DetectionHistory: React.FC<DetectionHistoryProps> = ({
                     {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
                   </p>
                 </div>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onSelectResult?.(item)}>
+                      View Details
+                    </DropdownMenuItem>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive cursor-pointer"
+                          onSelect={(e) => e.preventDefault()}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Detection Result</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete this detection result? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(item.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={deletingId === item.id}
+                          >
+                            {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))}
           </div>

@@ -103,6 +103,7 @@ export const PlantDetectionLayout = () => {
                 <DetectionHistory 
                   history={history} 
                   onSelectResult={handleSelectResult}
+                  onHistoryUpdate={loadHistory}
                 />
                 <Card className="p-6 shadow-medium border-border/50">
                   <h3 className="text-lg font-semibold mb-4">Analytics Overview</h3>

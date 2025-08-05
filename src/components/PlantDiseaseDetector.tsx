@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Loader2, Upload, Camera, AlertTriangle, CheckCircle, X, RefreshCw, Download, Share2, Image } from 'lucide-react';
 import { toast } from 'sonner';
-import { DetectionHistory, saveDetectionResult, uploadImage } from '@/lib/supabase';
+import { DetectionHistory, saveDetectionResult, uploadImage, deleteDetectionResult } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
 
 interface DetectionResult {
