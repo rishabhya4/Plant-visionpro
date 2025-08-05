@@ -1,7 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const geminiApiKey = Deno.env.get('GEMINI_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,28 +17,30 @@ serve(async (req) => {
   try {
     const { imageBase64 } = await req.json();
 
-    if (!openAIApiKey) {
-      throw new Error('OpenAI API key not configured');
+    if (!geminiApiKey) {
+      throw new Error('Gemini API key not configured');
     }
 
     if (!imageBase64) {
       throw new Error('No image provided');
     }
 
-    console.log('Analyzing plant image with OpenAI Vision...');
+    console.log('Analyzing plant image with Gemini Vision...');
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Extract base64 data from data URL
+    const base64Data = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
+        contents: [
           {
-            role: 'system',
-            content: `You are an expert plant pathologist. Analyze the uploaded plant image and provide a detailed diagnosis. 
+            parts: [
+              {
+                text: `You are an expert plant pathologist. Analyze the uploaded plant image and provide a detailed diagnosis. 
 
 IMPORTANT: Your response must be ONLY a valid JSON object with these exact fields:
 {
@@ -50,37 +52,34 @@ IMPORTANT: Your response must be ONLY a valid JSON object with these exact field
   "treatment": "string - detailed treatment recommendations"
 }
 
-Be accurate and professional. If the image is unclear or not a plant, set disease to "Unable to analyze" and confidence to 0.`
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Please analyze this plant image for diseases or health issues.'
+Be accurate and professional. If the image is unclear or not a plant, set disease to "Unable to analyze" and confidence to 0.
+
+Please analyze this plant image for diseases or health issues.`
               },
               {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: base64Data
                 }
               }
             ]
           }
         ],
-        max_tokens: 1000,
-        temperature: 0.2
+        generationConfig: {
+          maxOutputTokens: 1000,
+          temperature: 0.2
+        }
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('Gemini API error:', errorData);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const analysisText = data.choices[0].message.content;
+    const analysisText = data.candidates[0].content.parts[0].text;
 
     console.log('Raw AI response:', analysisText);
 
