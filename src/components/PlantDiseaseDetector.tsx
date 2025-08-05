@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, Camera, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Loader2, Upload, Camera, AlertTriangle, CheckCircle, X, RefreshCw, Download, Share2, Image } from 'lucide-react';
 import { toast } from 'sonner';
 import { DetectionHistory, saveDetectionResult, uploadImage } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
@@ -32,7 +33,11 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   // Effect to handle selected history result
   useEffect(() => {
@@ -95,13 +100,22 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
         throw new Error('Invalid response format from AI service');
       }
 
+      // Clean up text formatting (remove ** symbols and markdown)
+      const cleanText = (text: string) => {
+        return text
+          .replace(/\*\*/g, '')
+          .replace(/\*/g, '')
+          .replace(/#{1,6}\s/g, '')
+          .trim();
+      };
+
       return {
-        disease: data.disease,
+        disease: cleanText(data.disease),
         confidence: Math.round(data.confidence),
         severity: data.severity || 'Medium',
-        symptoms: data.symptoms || 'Symptoms analysis not available',
-        causes: data.causes || 'Cause analysis not available',
-        treatment: data.treatment || 'Treatment recommendations not available'
+        symptoms: cleanText(data.symptoms || 'Symptoms analysis not available'),
+        causes: cleanText(data.causes || 'Cause analysis not available'),
+        treatment: cleanText(data.treatment || 'Treatment recommendations not available')
       };
     } catch (error) {
       console.error('AI API call failed:', error);
@@ -175,6 +189,131 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
     } finally {
       setIsAnalyzing(false);
       setUploadProgress(0);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment', // Use back camera on mobile
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
+      });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+      setIsCameraOpen(true);
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      toast.error('Unable to access camera. Please check permissions.');
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    if (!context) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setSelectedImage(e.target?.result as string);
+          setSelectedFile(file);
+          setResult(null);
+          stopCamera();
+          // Clear any selected history result
+          if (onClearSelection) {
+            onClearSelection();
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }, 'image/jpeg', 0.8);
+  };
+
+  const retakePhoto = () => {
+    setSelectedImage(null);
+    setSelectedFile(null);
+    setResult(null);
+  };
+
+  const downloadResult = () => {
+    if (!result || !selectedImage) return;
+    
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new window.Image();
+    
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height + 200; // Extra space for text
+      
+      if (ctx) {
+        // Draw image
+        ctx.drawImage(img, 0, 0);
+        
+        // Add text overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, img.height, canvas.width, 200);
+        
+        ctx.fillStyle = 'white';
+        ctx.font = '20px Arial';
+        ctx.fillText(`Disease: ${result.disease}`, 20, img.height + 30);
+        ctx.fillText(`Confidence: ${result.confidence}%`, 20, img.height + 60);
+        ctx.fillText(`Severity: ${result.severity}`, 20, img.height + 90);
+        
+        // Download
+        const link = document.createElement('a');
+        link.download = `plant-analysis-${Date.now()}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+      }
+    };
+    
+    img.src = selectedImage;
+  };
+
+  const shareResult = async () => {
+    if (!result) return;
+    
+    const shareData = {
+      title: 'Plant Disease Detection Result',
+      text: `Disease detected: ${result.disease} (${result.confidence}% confidence)\nSeverity: ${result.severity}\n\nTreatment: ${result.treatment}`,
+      url: window.location.href
+    };
+    
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: copy to clipboard
+        await navigator.clipboard.writeText(shareData.text);
+        toast.success('Result copied to clipboard!');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+      toast.error('Unable to share result');
     }
   };
 
@@ -258,14 +397,58 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
               className="hidden"
             />
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 justify-center">
               <Button 
                 onClick={() => fileInputRef.current?.click()}
                 variant="outline"
+                className="shadow-soft"
               >
                 <Upload className="h-4 w-4 mr-2" />
                 Choose Image
               </Button>
+              
+              <Dialog open={isCameraOpen} onOpenChange={setIsCameraOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    onClick={startCamera}
+                    variant="outline"
+                    className="shadow-soft"
+                  >
+                    <Camera className="h-4 w-4 mr-2" />
+                    Take Photo
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Camera Capture</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="relative rounded-lg overflow-hidden">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        className="w-full h-64 object-cover"
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-center">
+                      <Button 
+                        onClick={capturePhoto}
+                        className="gradient-primary"
+                      >
+                        <Camera className="h-4 w-4 mr-2" />
+                        Capture
+                      </Button>
+                      <Button 
+                        onClick={stopCamera}
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
               
               {selectedImage && !selectedHistoryResult && (
                 <Button 
@@ -281,6 +464,17 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
                   ) : (
                     'Detect Disease'
                   )}
+                </Button>
+              )}
+              
+              {selectedImage && (
+                <Button 
+                  onClick={retakePhoto}
+                  variant="ghost"
+                  size="sm"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retake
                 </Button>
               )}
             </div>
@@ -354,8 +548,38 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
               <p className="text-muted-foreground leading-relaxed">{result.treatment}</p>
             </div>
 
-            <div className="pt-4 border-t border-border/50">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="pt-4 border-t border-border/50 space-y-4">
+              <div className="flex flex-wrap gap-2 justify-center">
+                <Button 
+                  onClick={downloadResult}
+                  variant="outline"
+                  size="sm"
+                  className="shadow-soft"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Report
+                </Button>
+                <Button 
+                  onClick={shareResult}
+                  variant="outline"
+                  size="sm"
+                  className="shadow-soft"
+                >
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share Result
+                </Button>
+                <Button 
+                  onClick={retakePhoto}
+                  variant="outline"
+                  size="sm"
+                  className="shadow-soft"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  New Analysis
+                </Button>
+              </div>
+              
+              <div className="flex items-center gap-2 text-sm text-muted-foreground justify-center">
                 <AlertTriangle className="h-4 w-4 text-warning" />
                 <span>Always consult with a plant specialist for severe cases or if symptoms persist</span>
               </div>
@@ -363,6 +587,9 @@ export const PlantDiseaseDetector: React.FC<PlantDiseaseDetectorProps> = ({
           </CardContent>
         </Card>
       )}
+      
+      {/* Hidden canvas for camera capture */}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
 };
